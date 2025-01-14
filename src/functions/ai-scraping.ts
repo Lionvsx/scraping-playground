@@ -11,6 +11,7 @@ import { cleanupHtml } from "./cleanup-html";
 import { simulateHumanScrolling } from "./simulate-human-behavior";
 
 import { anthropic } from "@ai-sdk/anthropic";
+import { writeFileSync } from "fs";
 
 dotenv.config();
 
@@ -58,8 +59,9 @@ export async function scrape({
     const pageContent = await page.content();
     const cleanedHtml = cleanupHtml(pageContent);
     await page.setContent(cleanedHtml);
-    console.log(cleanedHtml);
-    console.log("Page content cleaned");
+
+    // save the cleaned html to a file
+    writeFileSync("cleaned-html.html", cleanedHtml);
 
     await browser.close();
 
@@ -68,9 +70,7 @@ export async function scrape({
     const result = await generateObject({
       model: anthropic("claude-3-5-haiku-latest"),
       system: SCRAPING_SYSTEM_PROMPT,
-      prompt: SCRAPING_PROMPT(cleanedHtml),
-      schemaDescription: `Thoroughly extract ALL data from the page that matches the schema: ${scrapingSchema}. Do not skip any matching content. If pagination is present, indicate it in hasMoreData and nextCursorUrl fields. Ensure complete coverage of the page content.`,
-      schemaName: "scraping-result",
+      prompt: SCRAPING_PROMPT(cleanedHtml, scrapingSchema),
       schema: z.object({
         data: z
           .any()
@@ -98,7 +98,7 @@ export async function scrape({
           .optional()
           .describe("The URL to navigate to if there is more data to extract"),
       }),
-      maxRetries: 3,
+      maxRetries: 0,
     });
 
     let allData: any[] = [];
@@ -106,9 +106,7 @@ export async function scrape({
     let nextPageUrl: string | undefined;
 
     if (!result.object.hasError && result.object.data) {
-      const newData = Array.isArray(result.object.data)
-        ? result.object.data
-        : [result.object.data];
+      const newData = result.object.data;
       console.log(`✅ Extracted ${newData.length} items`);
       allData = newData;
 
